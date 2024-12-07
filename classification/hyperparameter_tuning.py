@@ -5,6 +5,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
 
 # Define the EXP3 algorithm class
 class EXP3:
@@ -51,6 +53,7 @@ y = data['Survived']
 X_train, X_valid, y_train, y_valid = train_test_split(
     X, y, test_size=0.2, random_state=42
 )
+print()
 
 # Define the possible values for each hyperparameter with expanded search space
 hyperparameter_values = {
@@ -62,10 +65,10 @@ hyperparameter_values = {
 
 # Initialize current hyperparameter values (starting point)
 current_params = {
-    'n_estimators': 100,
+    'n_estimators': 50,
     'max_depth': None,
     'min_samples_split': 2,
-    'max_features': None
+    'max_features': 'sqrt'
 }
 
 # **New Section: Train and Evaluate the Initial Model**
@@ -84,8 +87,14 @@ initial_y_pred = initial_model.predict(X_valid)
 initial_accuracy = accuracy_score(y_valid, initial_y_pred)
 print(f"Initial Model Accuracy (Before Tuning): {initial_accuracy:.4f}")
 
+
+#plotting the graph
+cumulative_regret = []
+best_possible_reward = initial_accuracy 
+
+
 # Number of iterations for the hyperparameter tuning loop
-n_iterations = 50
+n_iterations = 20
 
 # Initialize the bandit algorithms for each hyperparameter
 bandits = {}
@@ -115,6 +124,16 @@ for i in range(n_iterations):
     hp_arm_index, hp_probabilities = hyperparameter_bandit.select_arm()
     hp_to_adjust = hyperparameter_indices[hp_arm_index]
     
+    # Completely random selection
+    """ hp_to_adjust = np.random.choice(hyperparameters)
+    hp_arm_index = hyperparameters.index(hp_to_adjust)
+
+    # Simulate uniform probabilities for compatibility
+    n_hyperparameters = len(hyperparameters)
+    hp_probabilities = np.ones(n_hyperparameters) / n_hyperparameters
+     """
+    
+    
     # Select the value for the chosen hyperparameter using its bandit algorithm
     algorithm = bandits[hp_to_adjust]['algorithm']
     arm_index, probabilities = algorithm.select_arm()
@@ -140,6 +159,21 @@ for i in range(n_iterations):
     y_pred = model.predict(X_valid)
     accuracy = accuracy_score(y_valid, y_pred)
     reward = accuracy  # Use accuracy as the reward
+
+
+    #track best possible reward for plotting
+    best_possible_reward = max(best_possible_reward, reward)
+
+
+    # Calculate regret for this iteration
+    iteration_regret = best_possible_reward - reward
+
+
+    # Update cumulative regret
+    if cumulative_regret:
+        cumulative_regret.append(cumulative_regret[-1] + iteration_regret)
+    else:
+        cumulative_regret.append(iteration_regret)
 
     comparison_df = pd.DataFrame({'Actual': y_valid.values, 'Predicted': y_pred})
     print(f"Predictions vs. Actual Values for Iteration {i+1}:")
@@ -194,3 +228,75 @@ final_predictions = final_model.predict(X_valid)
 final_comparison_df = pd.DataFrame({'Actual': y_valid.values, 'Predicted': final_predictions})
 print("\nFinal Predictions vs. Actual Values:")
 print(final_comparison_df.head(200))  # Display the first few rows
+
+
+# Plot cumulative regret and compare it with sublinear growth (k * T * log(T))
+k = n_arms  # You can adjust this constant as needed
+
+T = np.arange(1, n_iterations+1)  # Example range of rounds
+
+# Calculate the values for sqrt(K * T * log(K))
+log_fit = np.sqrt(k* T * np.log(k))
+
+
+plt.figure(figsize=(10, 6))
+
+# Plot cumulative regret
+plt.plot(range(0, n_iterations), cumulative_regret, label="Cumulative Regret")
+plt.plot(range(0, n_iterations ), log_fit, linestyle='--', label=r"$\sqrt{KT \log(K)}$ Sublinear Fit")
+
+# Add labels and legend
+plt.xlabel("Iterations")
+plt.ylabel("Cumulative Regret")
+plt.title("Cumulative Regret of EXP3 (Sublinear Comparison)")
+plt.legend()
+plt.grid()  
+plt.show()
+
+# Plot normalized regret (R_T / T) to show that it decreases over iterations
+normalized_regret = [reg / t for reg, t in zip(cumulative_regret, range(1, n_iterations + 1))]
+
+plt.figure(figsize=(10, 6))
+plt.plot(range(1, n_iterations + 1), normalized_regret, label="Normalized Regret (R_T / T)")
+plt.xlabel("Iterations")
+plt.ylabel("R_T / T")
+plt.title("Normalized Regret (R_T / T) vs. Iterations")
+plt.legend()
+plt.grid()
+plt.show()
+
+
+
+""" 
+
+# Load the test.csv file
+test_data = pd.read_csv('test.csv')
+
+# Preprocessing for the test data
+# Drop unnecessary columns
+test_data = test_data.drop(['Cabin', 'Ticket', 'Name', 'PassengerId'], axis=1, errors='ignore')
+
+# Fill or drop missing values (depending on your training preprocessing)
+test_data = test_data.dropna()
+
+# Encode categorical variables
+for column in ['Sex', 'Embarked']:
+    if column in test_data.columns:
+        if column in label_encoders:  # Use the same LabelEncoders from training
+            test_data[column] = label_encoders[column].transform(test_data[column])
+        else:
+            print(f"LabelEncoder not found for column '{column}'")
+
+# Ensure the test data matches the training feature set
+X_test = test_data
+
+# Predict using the final model
+test_predictions = final_model.predict(X_test)
+
+# Display or save predictions
+output = pd.DataFrame({'Prediction': test_predictions})
+print(output)
+
+# Save predictions to a CSV file
+output.to_csv('test_predictions.csv', index=False)
+print("Predictions saved to 'test_predictions.csv'") """
